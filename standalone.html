@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JBA — Operator Dashboard · Call Schedule</title>
+<meta name="description" content="Jewel Business Accelerator — upcoming live sessions, workshops, and member experiences." />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/framer-motion/11.3.8/framer-motion.js"></script>
+<style>
+  html,body{margin:0;padding:0;background:#faf7f4}
+  *{box-sizing:border-box}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo } = React;
+const { motion, AnimatePresence } = window.Motion;
+
+/* ─── DATA ─────────────────────────────────────────────────────────────── */
+const CATEGORIES = {
+  ceo: { label: "CEO Operating Sessions", short: "CEO Operating" },
+  lab: { label: "JEWEL Lab Sessions", short: "JEWEL Labs" },
+  retreat: { label: "Retreats", short: "Retreats" },
+};
+const ZOOM_LINKS = {
+  lab: "https://us02web.zoom.us/j/81627570489",
+  ceo: "https://us02web.zoom.us/j/87842146671",
+};
+
+const EVENTS = [
+  { id:"retreat-2026-06-18", title:"Virtual Retreat", date:"2026-06-18", startTime:"10:00", endTime:"15:00",
+    host:"Eleanor + Advisory Board", category:"retreat", featured:true, image:"",
+    description:"An immersive virtual retreat experience for JBA operators focused on leadership, strategy, implementation, and executive growth.",
+    joinUrl:"https://us02web.zoom.us/j/87842146671" },
+  ...["2026-05-05","2026-05-26","2026-06-02","2026-06-30","2026-07-07","2026-07-28","2026-08-04"].map(date=>({
+    id:`ceo-${date}`, title:"CEO Operating Session", date, startTime:"15:00", endTime:"15:45",
+    host:"Eleanor + Advisory Board", category:"ceo", image:"",
+    description:"Business reporting and operating system review session led by Eleanor and the Advisory Board.",
+    joinUrl:ZOOM_LINKS.ceo })),
+  ...[
+    {date:"2026-05-07",host:"Eleanor"},{date:"2026-05-14",host:"Bridgette"},{date:"2026-05-21",host:"Eleanor"},
+    {date:"2026-05-28",host:"Eleanor"},{date:"2026-06-04",host:"Eleanor"},{date:"2026-06-11",host:"Eleanor"},
+    {date:"2026-06-18",host:"Bridgette"},{date:"2026-06-25",host:"Eleanor"},{date:"2026-07-02",host:"Eleanor"},
+    {date:"2026-07-09",host:"Eleanor"},{date:"2026-07-16",host:"Bridgette"},{date:"2026-07-23",host:"Bridgette"},
+    {date:"2026-07-30",host:"Eleanor"},{date:"2026-08-06",host:"Eleanor"},{date:"2026-08-13",host:"Eleanor"},
+  ].map(({date,host})=>({
+    id:`lab-${date}`, title:"JEWEL Lab Session", date, startTime:"12:00", endTime:"13:00",
+    host, category:"lab", image:"",
+    description:"Focused implementation session centered on installing and reinforcing the Deal Flow Engine framework.",
+    joinUrl:ZOOM_LINKS.lab })),
+];
+
+/* ─── ENGINE ───────────────────────────────────────────────────────────── */
+const sortKey = e => new Date(`${e.date}T${e.startTime}:00`).getTime();
+const isPast = (e,n=new Date()) => new Date(`${e.date}T${e.endTime}:00`).getTime() < n.getTime();
+const isLive = (e,n=new Date()) => { const s=new Date(`${e.date}T${e.startTime}:00`).getTime(),x=new Date(`${e.date}T${e.endTime}:00`).getTime(); return n.getTime()>=s&&n.getTime()<=x; };
+const isLiveSoon = (e,n=new Date()) => { const d=new Date(`${e.date}T${e.startTime}:00`).getTime()-n.getTime(); return d>0&&d<=3600000; };
+const getUpcoming = (ev,n=new Date()) => ev.filter(e=>!isPast(e,n)).sort((a,b)=>sortKey(a)-sortKey(b));
+const getPast = (ev,n=new Date()) => ev.filter(e=>isPast(e,n)).sort((a,b)=>sortKey(b)-sortKey(a));
+const getNextEvent = (ev,n=new Date()) => { const u=getUpcoming(ev,n); if(!u.length)return null; const f=u.filter(e=>e.featured); return f.length?f[0]:u[0]; };
+const formatDate = (e,o={}) => new Date(`${e.date}T${e.startTime}:00`).toLocaleDateString("en-US",{weekday:o.weekday||"long",month:"long",day:"numeric",...o});
+const formatDayParts = e => { const d=new Date(`${e.date}T${e.startTime}:00`); return { weekday:d.toLocaleDateString("en-US",{weekday:"short"}), day:d.toLocaleDateString("en-US",{day:"numeric"}), month:d.toLocaleDateString("en-US",{month:"short"}) }; };
+const formatTimeRange = e => { const f=t=>{const[h,m]=t.split(":").map(Number);const p=h>=12?"PM":"AM";const hr=h%12===0?12:h%12;return m===0?`${hr}${p}`:`${hr}:${String(m).padStart(2,"0")}${p}`;}; return `${f(e.startTime)}–${f(e.endTime)} ET`; };
+const getCountdown = (e,n=new Date()) => {
+  if(isLive(e,n))return{label:"Happening now"}; if(isPast(e,n))return{label:"Completed"};
+  const diff=new Date(`${e.date}T${e.startTime}:00`).getTime()-n.getTime();
+  const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000);
+  if(d>=1)return{label:`In ${d} day${d>1?"s":""}`}; if(h>=1)return{label:`In ${h}h ${m}m`}; return{label:`In ${m}m`};
+};
+const statusBadge = (e,n=new Date()) => {
+  if(isLive(e,n))return{text:"Live Now",tone:"live"}; if(isLiveSoon(e,n))return{text:"Live Soon",tone:"soon"};
+  if(isPast(e,n))return{text:"Completed",tone:"done"}; return{text:"Registration Open",tone:"open"};
+};
+
+/* ─── ICONS ────────────────────────────────────────────────────────────── */
+const I = {
+  Clock:p=>(<svg viewBox="0 0 24 24" fill="none" {...p}><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6"/><path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>),
+  User:p=>(<svg viewBox="0 0 24 24" fill="none" {...p}><circle cx="12" cy="8" r="3.4" stroke="currentColor" strokeWidth="1.6"/><path d="M5 20c0-3.5 3.1-5.5 7-5.5s7 2 7 5.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>),
+  Video:p=>(<svg viewBox="0 0 24 24" fill="none" {...p}><rect x="3" y="6" width="12" height="12" rx="2.5" stroke="currentColor" strokeWidth="1.6"/><path d="M15 10l6-3v10l-6-3" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/></svg>),
+  Search:p=>(<svg viewBox="0 0 24 24" fill="none" {...p}><circle cx="11" cy="11" r="6" stroke="currentColor" strokeWidth="1.7"/><path d="m20 20-4-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>),
+  List:p=>(<svg viewBox="0 0 24 24" fill="none" {...p}><path d="M8 6h12M8 12h12M8 18h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/><circle cx="4" cy="6" r="1.3" fill="currentColor"/><circle cx="4" cy="12" r="1.3" fill="currentColor"/><circle cx="4" cy="18" r="1.3" fill="currentColor"/></svg>),
+  Grid:p=>(<svg viewBox="0 0 24 24" fill="none" {...p}><rect x="4" y="4" width="7" height="7" rx="1.6" stroke="currentColor" strokeWidth="1.7"/><rect x="13" y="4" width="7" height="7" rx="1.6" stroke="currentColor" strokeWidth="1.7"/><rect x="4" y="13" width="7" height="7" rx="1.6" stroke="currentColor" strokeWidth="1.7"/><rect x="13" y="13" width="7" height="7" rx="1.6" stroke="currentColor" strokeWidth="1.7"/></svg>),
+  Arrow:p=>(<svg viewBox="0 0 24 24" fill="none" {...p}><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>),
+  Spark:p=>(<svg viewBox="0 0 24 24" fill="none" {...p}><path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6L12 3Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>),
+  Moon:p=>(<svg viewBox="0 0 24 24" fill="none" {...p}><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/></svg>),
+  Sun:p=>(<svg viewBox="0 0 24 24" fill="none" {...p}><circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.6"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>),
+  Cog:p=>(<svg viewBox="0 0 24 24" fill="none" {...p}><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.1 5.1l2.1 2.1M16.8 16.8l2.1 2.1M18.9 5.1l-2.1 2.1M7.2 16.8l-2.1 2.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>),
+};
+
+/* ─── SMALL COMPONENTS ─────────────────────────────────────────────────── */
+function StatusBadge({event,now}){
+  const b=statusBadge(event,now);
+  const s={ live:{bg:"var(--coral)",fg:"#fff",dot:true}, soon:{bg:"rgba(254,95,84,0.12)",fg:"var(--coral)",dot:true},
+    open:{bg:"rgba(15,44,160,0.08)",fg:"var(--royal)",dot:false}, done:{bg:"var(--chip)",fg:"var(--ink-soft)",dot:false} }[b.tone];
+  return <span className="jba-badge" style={{background:s.bg,color:s.fg}}>{s.dot&&<span className="jba-badge-dot" style={{background:s.fg}}/>}{b.text}</span>;
+}
+function CategoryTag({category}){
+  const m={ ceo:{c:"var(--royal)",bg:"rgba(15,44,160,0.07)"}, lab:{c:"var(--coral)",bg:"rgba(254,95,84,0.09)"}, retreat:{c:"var(--navy)",bg:"rgba(1,21,137,0.07)"} }[category];
+  return <span className="jba-cat" style={{color:m.c,background:m.bg}}>{CATEGORIES[category].short}</span>;
+}
+function HeroCountdown({event,now}){
+  const diff=Math.max(0,new Date(`${event.date}T${event.startTime}:00`).getTime()-now.getTime());
+  const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
+  const cell=(v,l)=>(<div className="jba-cd-cell"><span className="jba-cd-num">{String(v).padStart(2,"0")}</span><span className="jba-cd-lab">{l}</span></div>);
+  return <div className="jba-cd">{cell(d,"days")}<span className="jba-cd-sep">:</span>{cell(h,"hrs")}<span className="jba-cd-sep">:</span>{cell(m,"min")}<span className="jba-cd-sep">:</span>{cell(s,"sec")}</div>;
+}
+
+function FeaturedEvent({event,now}){
+  if(!event)return null;
+  return (
+    <motion.div initial={{opacity:0,y:24}} animate={{opacity:1,y:0}} transition={{duration:0.7,ease:[0.22,1,0.36,1]}} className="jba-hero">
+      <div className="jba-hero-glow"/>
+      <div className="jba-hero-inner">
+        <div className="jba-hero-left">
+          <div className="jba-hero-eyebrow"><I.Spark width={15} height={15}/>Your Next Session</div>
+          <div className="jba-hero-meta"><CategoryTag category={event.category}/><StatusBadge event={event} now={now}/></div>
+          <h2 className="jba-hero-title">{event.title}</h2>
+          <p className="jba-hero-desc">{event.description}</p>
+          <div className="jba-hero-facts">
+            <div className="jba-fact"><span className="jba-fact-k">Date</span><span className="jba-fact-v">{formatDate(event)}</span></div>
+            <div className="jba-fact"><span className="jba-fact-k">Time</span><span className="jba-fact-v">{formatTimeRange(event)}</span></div>
+            <div className="jba-fact"><span className="jba-fact-k">Host</span><span className="jba-fact-v">{event.host}</span></div>
+          </div>
+          <div className="jba-hero-actions">
+            <a className="jba-btn jba-btn-primary" href={event.joinUrl} target="_blank" rel="noreferrer">Join Session<I.Arrow width={17} height={17}/></a>
+            <span className="jba-hero-note"><I.Video width={15} height={15}/>Zoom link + automatic reminders</span>
+          </div>
+        </div>
+        <div className="jba-hero-right">
+          <div className="jba-hero-cd-label">Begins in</div>
+          <HeroCountdown event={event} now={now}/>
+          <div className="jba-hero-cd-date">{formatDate(event,{weekday:"long"})}</div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function AgendaRow({event,now,index}){
+  const dp=formatDayParts(event), cd=getCountdown(event,now);
+  return (
+    <motion.div initial={{opacity:0,y:14}} animate={{opacity:1,y:0}} transition={{duration:0.45,delay:index*0.035,ease:[0.22,1,0.36,1]}} className="jba-row" whileHover={{x:4}}>
+      <div className="jba-row-date"><span className="jba-row-mon">{dp.month}</span><span className="jba-row-day">{dp.day}</span><span className="jba-row-wk">{dp.weekday}</span></div>
+      <div className="jba-row-spine"/>
+      <div className="jba-row-body">
+        <div className="jba-row-top"><CategoryTag category={event.category}/><span className="jba-row-cd">{cd.label}</span></div>
+        <h3 className="jba-row-title">{event.title}</h3>
+        <div className="jba-row-meta">
+          <span><I.Clock width={14} height={14}/> {formatTimeRange(event)}</span>
+          <span><I.User width={14} height={14}/> {event.host}</span>
+          <span className="jba-virtual"><I.Video width={14} height={14}/> Virtual</span>
+        </div>
+      </div>
+      <div className="jba-row-actions">
+        <StatusBadge event={event} now={now}/>
+        <a className="jba-btn jba-btn-ghost" href={event.joinUrl} target="_blank" rel="noreferrer">Join<I.Arrow width={15} height={15}/></a>
+      </div>
+    </motion.div>
+  );
+}
+
+function PremiumCard({event,now,index}){
+  const cd=getCountdown(event,now);
+  return (
+    <motion.div initial={{opacity:0,y:22}} animate={{opacity:1,y:0}} transition={{duration:0.5,delay:index*0.05,ease:[0.22,1,0.36,1]}} className="jba-card" whileHover={{y:-6}}>
+      <div className="jba-card-top"><CategoryTag category={event.category}/><StatusBadge event={event} now={now}/></div>
+      <h3 className="jba-card-title">{event.title}</h3>
+      <p className="jba-card-desc">{event.description}</p>
+      <div className="jba-card-rule"/>
+      <div className="jba-card-grid">
+        <div><span className="jba-fact-k">Date</span><span className="jba-card-fv">{formatDate(event,{weekday:"short"})}</span></div>
+        <div><span className="jba-fact-k">Time</span><span className="jba-card-fv">{formatTimeRange(event)}</span></div>
+        <div><span className="jba-fact-k">Host</span><span className="jba-card-fv">{event.host}</span></div>
+        <div><span className="jba-fact-k">Countdown</span><span className="jba-card-fv">{cd.label}</span></div>
+      </div>
+      <a className="jba-btn jba-btn-primary jba-card-btn" href={event.joinUrl} target="_blank" rel="noreferrer">Join Session<I.Arrow width={16} height={16}/></a>
+    </motion.div>
+  );
+}
+
+function Skeleton({view}){
+  const items=Array.from({length:view==="grid"?6:5});
+  return <div className={view==="grid"?"jba-grid":"jba-list"}>{items.map((_,i)=><div key={i} className={`jba-skel ${view==="grid"?"jba-skel-card":"jba-skel-row"}`}><div className="jba-shimmer"/></div>)}</div>;
+}
+function EmptyState({onReset}){
+  return (
+    <motion.div initial={{opacity:0,scale:0.96}} animate={{opacity:1,scale:1}} className="jba-empty">
+      <div className="jba-empty-mark"><I.Spark width={28} height={28}/></div>
+      <h3>No sessions match this view</h3>
+      <p>Try a different filter or clear your search to see everything on the schedule.</p>
+      <button className="jba-btn jba-btn-ghost" onClick={onReset}>Clear filters</button>
+    </motion.div>
+  );
+}
+
+/* ─── ADMIN PANEL ──────────────────────────────────────────────────────── */
+const BLANK={id:"",title:"",date:"",startTime:"12:00",endTime:"13:00",host:"",category:"lab",featured:false,image:"",description:"",joinUrl:""};
+function AdminPanel({events,onClose,onSave}){
+  const [list,setList]=useState(events);
+  const [draft,setDraft]=useState(null);
+  const [confirmReset,setConfirmReset]=useState(false);
+  const startNew=()=>setDraft({...BLANK,id:`evt-${Date.now()}`,joinUrl:ZOOM_LINKS.lab});
+  const remove=id=>{const n=list.filter(e=>e.id!==id);setList(n);onSave(n);};
+  const commit=()=>{ if(!draft.title||!draft.date)return; const ex=list.some(e=>e.id===draft.id);
+    const n=ex?list.map(e=>e.id===draft.id?draft:e):[...list,draft]; setList(n);onSave(n);setDraft(null); };
+  const set=(k,v)=>setDraft(d=>({...d,[k]:v}));
+  const sorted=[...list].sort((a,b)=>new Date(`${a.date}T${a.startTime}`)-new Date(`${b.date}T${b.startTime}`));
+  return (
+    <motion.div className="jba-admin-overlay" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={onClose}>
+      <motion.div className="jba-admin" initial={{x:60,opacity:0}} animate={{x:0,opacity:1}} exit={{x:60,opacity:0}} transition={{duration:0.4,ease:[0.22,1,0.36,1]}} onClick={e=>e.stopPropagation()}>
+        <div className="jba-admin-head">
+          <div>
+            <div className="jba-admin-kick">EVENT MANAGEMENT</div>
+            <h2>Manage Sessions</h2>
+            <p>Add, edit, or remove events. Changes appear instantly on the dashboard.</p>
+          </div>
+          <button className="jba-admin-x" onClick={onClose}>✕</button>
+        </div>
+        {!draft ? (<React.Fragment>
+          <div className="jba-admin-actions">
+            <button className="jba-admin-add" onClick={startNew}>+ Add New Event</button>
+            <button className="jba-admin-reset" onClick={()=>{ if(confirmReset){onSave(EVENTS);setList(EVENTS);setConfirmReset(false);} else setConfirmReset(true); }}>
+              {confirmReset?"Click again to confirm":"Reset to defaults"}
+            </button>
+          </div>
+          <div className="jba-admin-list">
+            {sorted.map(e=>(
+              <div className="jba-admin-item" key={e.id}>
+                <div className="jba-admin-item-main">
+                  <div className="jba-admin-item-top"><span className="jba-admin-tag">{CATEGORIES[e.category].short}</span>{e.featured&&<span className="jba-admin-star">★ Featured</span>}</div>
+                  <strong>{e.title}</strong>
+                  <span className="jba-admin-meta">{e.date} · {e.startTime}–{e.endTime} · {e.host}</span>
+                </div>
+                <div className="jba-admin-item-btns">
+                  <button onClick={()=>setDraft({...e})}>Edit</button>
+                  <button className="jba-del" onClick={()=>remove(e.id)}>Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </React.Fragment>) : (
+          <div className="jba-form">
+            <label><span>Event Title</span><input value={draft.title} onChange={e=>set("title",e.target.value)} placeholder="JEWEL Lab Session"/></label>
+            <div className="jba-form-row">
+              <label><span>Date</span><input type="date" value={draft.date} onChange={e=>set("date",e.target.value)}/></label>
+              <label><span>Category</span><select value={draft.category} onChange={e=>set("category",e.target.value)}>{Object.entries(CATEGORIES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></label>
+            </div>
+            <div className="jba-form-row">
+              <label><span>Start Time</span><input type="time" value={draft.startTime} onChange={e=>set("startTime",e.target.value)}/></label>
+              <label><span>End Time</span><input type="time" value={draft.endTime} onChange={e=>set("endTime",e.target.value)}/></label>
+            </div>
+            <label><span>Host</span><input value={draft.host} onChange={e=>set("host",e.target.value)} placeholder="Eleanor"/></label>
+            <label><span>Zoom Join / Registration Link</span><input value={draft.joinUrl} onChange={e=>set("joinUrl",e.target.value)} placeholder="https://us02web.zoom.us/j/..."/></label>
+            <label><span>Thumbnail Image URL (optional)</span><input value={draft.image} onChange={e=>set("image",e.target.value)} placeholder="https://..."/></label>
+            <label><span>Description</span><textarea rows={3} value={draft.description} onChange={e=>set("description",e.target.value)} placeholder="Short summary shown on the card."/></label>
+            <label className="jba-form-check"><input type="checkbox" checked={draft.featured} onChange={e=>set("featured",e.target.checked)}/><span>Pin as featured flagship event</span></label>
+            <div className="jba-form-btns">
+              <button className="jba-form-cancel" onClick={()=>setDraft(null)}>Cancel</button>
+              <button className="jba-form-save" onClick={commit}>Save Event</button>
+            </div>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ─── DASHBOARD ────────────────────────────────────────────────────────── */
+function Dashboard(){
+  const [now,setNow]=useState(new Date());
+  const [loading,setLoading]=useState(true);
+  const [view,setView]=useState("list");
+  const [filter,setFilter]=useState("all");
+  const [query,setQuery]=useState("");
+  const [dark,setDark]=useState(false);
+  const [showPast,setShowPast]=useState(false);
+  const [adminOpen,setAdminOpen]=useState(false);
+  const [events,setEvents]=useState(EVENTS);
+
+  useEffect(()=>{ const t=setInterval(()=>setNow(new Date()),1000); return ()=>clearInterval(t); },[]);
+  useEffect(()=>{ const t=setTimeout(()=>setLoading(false),1100); return ()=>clearTimeout(t); },[]);
+
+  const nextEvent=useMemo(()=>getNextEvent(events,now),[events,now]);
+  const upcoming=useMemo(()=>getUpcoming(events,now),[events,now]);
+  const past=useMemo(()=>getPast(events,now),[events,now]);
+
+  const feed=useMemo(()=>{
+    const base=showPast?past:upcoming.filter(e=>e.id!==(nextEvent&&nextEvent.id));
+    return base.filter(e=>{
+      const mc=filter==="all"||e.category===filter;
+      const q=query.trim().toLowerCase();
+      const mq=!q||e.title.toLowerCase().includes(q)||e.host.toLowerCase().includes(q)||CATEGORIES[e.category].label.toLowerCase().includes(q);
+      return mc&&mq;
+    });
+  },[showPast,past,upcoming,nextEvent,filter,query]);
+
+  const filters=[{id:"all",label:"All Events"},{id:"ceo",label:"CEO Operating"},{id:"lab",label:"JEWEL Labs"},{id:"retreat",label:"Retreats"}];
+
+  return (
+    <div className={`jba-root ${dark?"jba-dark":""}`}>
+      <div className="jba-wrap">
+        <motion.header initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{duration:0.6,ease:[0.22,1,0.36,1]}} className="jba-head">
+          <div>
+            <div className="jba-kicker">JEWEL BUSINESS ACCELERATOR</div>
+            <h1 className="jba-h1">Call&nbsp;Schedule</h1>
+            <p className="jba-sub">Stay connected to upcoming live sessions, workshops, and member experiences.</p>
+          </div>
+          <div className="jba-head-tools">
+            <button className="jba-icon-btn" onClick={()=>setDark(d=>!d)} title="Toggle theme">{dark?<I.Sun width={18} height={18}/>:<I.Moon width={18} height={18}/>}</button>
+            <button className="jba-icon-btn" onClick={()=>setAdminOpen(true)} title="Manage events"><I.Cog width={18} height={18}/></button>
+          </div>
+        </motion.header>
+
+        {loading ? <div className="jba-hero jba-skel"><div className="jba-shimmer"/></div> : <FeaturedEvent event={nextEvent} now={now}/>}
+
+        <div className="jba-controls">
+          <div className="jba-filters">
+            {filters.map(f=><button key={f.id} className={`jba-chip ${filter===f.id?"jba-chip-on":""}`} onClick={()=>setFilter(f.id)}>{f.label}</button>)}
+          </div>
+          <div className="jba-control-right">
+            <div className="jba-search"><I.Search width={16} height={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search sessions or hosts"/></div>
+            <button className={`jba-chip jba-chip-soft ${showPast?"jba-chip-on":""}`} onClick={()=>setShowPast(s=>!s)}>{showPast?"Upcoming":"Replays"}</button>
+            <div className="jba-toggle">
+              <button className={`jba-toggle-btn ${view==="list"?"jba-toggle-on":""}`} onClick={()=>setView("list")}><I.List width={17} height={17}/></button>
+              <button className={`jba-toggle-btn ${view==="grid"?"jba-toggle-on":""}`} onClick={()=>setView("grid")}><I.Grid width={17} height={17}/></button>
+            </div>
+          </div>
+        </div>
+
+        <div className="jba-feed-head">
+          <h2 className="jba-feed-title">{showPast?"Replay Library":"Upcoming Events"}</h2>
+          <span className="jba-feed-count">{feed.length} session{feed.length!==1?"s":""}</span>
+        </div>
+
+        {loading ? <Skeleton view={view}/> : feed.length===0 ? <EmptyState onReset={()=>{setFilter("all");setQuery("");setShowPast(false);}}/> : (
+          <AnimatePresence mode="wait">
+            <motion.div key={view+filter+showPast} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.25}} className={view==="grid"?"jba-grid":"jba-list"}>
+              {feed.map((e,i)=>view==="grid"?<PremiumCard key={e.id} event={e} now={now} index={i}/>:<AgendaRow key={e.id} event={e} now={now} index={i}/>)}
+            </motion.div>
+          </AnimatePresence>
+        )}
+
+        <footer className="jba-foot">
+          <span>Jewel Business Accelerator — Operator Dashboard</span>
+          <span>Sessions auto-update · Zoom reminders sent automatically</span>
+        </footer>
+      </div>
+
+      {!loading&&nextEvent&&(
+        <motion.a href={nextEvent.joinUrl} target="_blank" rel="noreferrer" className="jba-sticky" initial={{y:80,opacity:0}} animate={{y:0,opacity:1}} transition={{delay:1.3,duration:0.5}}>
+          <div className="jba-sticky-l">
+            <span className="jba-sticky-k">Next · {formatDate(nextEvent,{weekday:"short",month:"short"})}</span>
+            <span className="jba-sticky-t">{nextEvent.title}</span>
+          </div>
+          <span className="jba-btn jba-btn-primary jba-sticky-btn">Join <I.Arrow width={15} height={15}/></span>
+        </motion.a>
+      )}
+
+      <AnimatePresence>
+        {adminOpen&&<AdminPanel events={events} onClose={()=>setAdminOpen(false)} onSave={setEvents}/>}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Dashboard/>);
+</script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap');
+.jba-root{
+  --coral:#fe5f54;--royal:#0f2ca0;--navy:#011589;--bg:#faf7f4;--surface:#ffffff;
+  --ink:#15121f;--ink-soft:#6b6577;--line:rgba(1,21,137,0.10);--chip:rgba(1,21,137,0.045);
+  --shadow:0 1px 2px rgba(1,21,137,0.04),0 12px 34px -18px rgba(1,21,137,0.22);
+  --shadow-lg:0 1px 2px rgba(1,21,137,0.05),0 30px 60px -28px rgba(1,21,137,0.30);
+  --radius:22px;--font-display:'Fraunces',Georgia,serif;--font-body:'Manrope',-apple-system,sans-serif;
+  background:var(--bg);color:var(--ink);font-family:var(--font-body);min-height:100vh;-webkit-font-smoothing:antialiased;position:relative;
+}
+.jba-root.jba-dark{--bg:#0a0a14;--surface:#12121f;--ink:#f3f1ee;--ink-soft:#9a94a8;--line:rgba(255,255,255,0.09);--chip:rgba(255,255,255,0.05);--shadow:0 1px 2px rgba(0,0,0,0.4),0 16px 40px -20px rgba(0,0,0,0.7);--shadow-lg:0 1px 2px rgba(0,0,0,0.5),0 30px 60px -28px rgba(0,0,0,0.8);}
+.jba-root *{box-sizing:border-box;margin:0;padding:0}
+.jba-wrap{max-width:1140px;margin:0 auto;padding:56px 28px 140px}
+.jba-head{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-bottom:38px}
+.jba-kicker{font-size:11.5px;letter-spacing:.22em;font-weight:700;color:var(--coral);margin-bottom:14px}
+.jba-h1{font-family:var(--font-display);font-size:clamp(38px,5.4vw,60px);font-weight:500;letter-spacing:-.02em;line-height:1;margin-bottom:14px}
+.jba-sub{font-size:16px;color:var(--ink-soft);max-width:440px;line-height:1.6}
+.jba-head-tools{display:flex;gap:10px;flex-shrink:0}
+.jba-icon-btn{width:42px;height:42px;border-radius:14px;border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);display:grid;place-items:center;cursor:pointer;transition:.25s}
+.jba-icon-btn:hover{color:var(--coral);border-color:var(--coral);transform:translateY(-1px)}
+.jba-hero{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:28px;box-shadow:var(--shadow-lg);overflow:hidden;margin-bottom:44px;min-height:280px}
+.jba-hero-glow{position:absolute;inset:0;background:radial-gradient(680px 360px at 88% -10%,rgba(254,95,84,0.10),transparent 60%),radial-gradient(560px 340px at 6% 110%,rgba(15,44,160,0.10),transparent 62%);pointer-events:none}
+.jba-hero-inner{position:relative;display:grid;grid-template-columns:1.55fr 1fr;gap:30px;padding:46px 48px}
+.jba-hero-eyebrow{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;letter-spacing:.16em;color:var(--coral);margin-bottom:20px}
+.jba-hero-meta{display:flex;gap:10px;margin-bottom:18px}
+.jba-hero-title{font-family:var(--font-display);font-size:clamp(30px,3.6vw,42px);font-weight:500;letter-spacing:-.02em;line-height:1.08;margin-bottom:14px}
+.jba-hero-desc{font-size:15.5px;color:var(--ink-soft);line-height:1.7;max-width:520px;margin-bottom:28px}
+.jba-hero-facts{display:flex;gap:38px;margin-bottom:30px;flex-wrap:wrap}
+.jba-fact{display:flex;flex-direction:column;gap:6px}
+.jba-fact-k{font-size:11px;letter-spacing:.13em;font-weight:700;color:var(--ink-soft);text-transform:uppercase}
+.jba-fact-v{font-size:15.5px;font-weight:600;color:var(--ink)}
+.jba-hero-actions{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.jba-hero-note{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft)}
+.jba-hero-right{border-left:1px solid var(--line);padding-left:34px;display:flex;flex-direction:column;justify-content:center}
+.jba-hero-cd-label{font-size:11.5px;letter-spacing:.16em;font-weight:700;text-transform:uppercase;color:var(--ink-soft);margin-bottom:18px}
+.jba-hero-cd-date{margin-top:18px;font-size:13.5px;color:var(--ink-soft);font-weight:500}
+.jba-cd{display:flex;align-items:flex-start;gap:8px}
+.jba-cd-cell{display:flex;flex-direction:column;align-items:center;gap:7px;min-width:50px}
+.jba-cd-num{font-family:var(--font-display);font-size:38px;font-weight:500;line-height:1;color:var(--navy);font-variant-numeric:tabular-nums}
+.jba-dark .jba-cd-num{color:#fff}
+.jba-cd-lab{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-soft);font-weight:700}
+.jba-cd-sep{font-family:var(--font-display);font-size:30px;color:var(--line);padding-top:2px}
+.jba-badge{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:6px 12px;border-radius:999px;letter-spacing:.02em}
+.jba-badge-dot{width:6px;height:6px;border-radius:50%;animation:pulse 1.8s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.jba-cat{font-size:11px;font-weight:700;padding:5px 11px;border-radius:999px;letter-spacing:.04em}
+.jba-btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--font-body);font-size:14px;font-weight:700;border:none;border-radius:999px;cursor:pointer;text-decoration:none;transition:.25s;white-space:nowrap}
+.jba-btn-primary{background:var(--coral);color:#fff;padding:14px 26px;box-shadow:0 10px 24px -10px rgba(254,95,84,0.55)}
+.jba-btn-primary:hover{transform:translateY(-2px);box-shadow:0 16px 30px -10px rgba(254,95,84,0.6)}
+.jba-btn-ghost{background:var(--chip);color:var(--ink);padding:10px 18px}
+.jba-btn-ghost:hover{background:var(--coral);color:#fff}
+.jba-controls{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-bottom:30px;flex-wrap:wrap}
+.jba-filters{display:flex;gap:8px;flex-wrap:wrap}
+.jba-chip{font-family:var(--font-body);font-size:13px;font-weight:600;padding:9px 17px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);cursor:pointer;transition:.22s}
+.jba-chip:hover{color:var(--ink);border-color:var(--ink-soft)}
+.jba-chip-on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.jba-dark .jba-chip-on{background:var(--coral);border-color:var(--coral)}
+.jba-chip-soft{background:var(--chip)}
+.jba-control-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.jba-search{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:10px 16px;color:var(--ink-soft);transition:.22s}
+.jba-search:focus-within{border-color:var(--coral);color:var(--coral)}
+.jba-search input{border:none;background:none;outline:none;font-family:var(--font-body);font-size:13.5px;color:var(--ink);width:170px}
+.jba-search input::placeholder{color:var(--ink-soft)}
+.jba-toggle{display:flex;background:var(--chip);border-radius:14px;padding:4px;gap:3px}
+.jba-toggle-btn{width:38px;height:34px;border:none;background:none;border-radius:10px;color:var(--ink-soft);cursor:pointer;display:grid;place-items:center;transition:.2s}
+.jba-toggle-on{background:var(--surface);color:var(--coral);box-shadow:var(--shadow)}
+.jba-feed-head{display:flex;align-items:baseline;gap:14px;margin-bottom:22px}
+.jba-feed-title{font-family:var(--font-display);font-size:24px;font-weight:500;letter-spacing:-.01em}
+.jba-feed-count{font-size:13px;color:var(--ink-soft);font-weight:600}
+.jba-list{display:flex;flex-direction:column;gap:12px}
+.jba-row{display:flex;align-items:center;gap:22px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px 24px;box-shadow:var(--shadow);transition:border-color .25s,box-shadow .25s}
+.jba-row:hover{border-color:rgba(254,95,84,0.4);box-shadow:var(--shadow-lg)}
+.jba-row-date{display:flex;flex-direction:column;align-items:center;min-width:54px;text-align:center}
+.jba-row-mon{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--coral)}
+.jba-row-day{font-family:var(--font-display);font-size:30px;font-weight:500;line-height:1.05;color:var(--ink)}
+.jba-row-wk{font-size:11px;color:var(--ink-soft);font-weight:600}
+.jba-row-spine{width:1px;align-self:stretch;background:var(--line)}
+.jba-row-body{flex:1;min-width:0}
+.jba-row-top{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.jba-row-cd{font-size:12px;color:var(--ink-soft);font-weight:600}
+.jba-row-title{font-family:var(--font-display);font-size:19px;font-weight:500;margin-bottom:9px;letter-spacing:-.01em}
+.jba-row-meta{display:flex;gap:20px;flex-wrap:wrap}
+.jba-row-meta span{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--ink-soft);font-weight:500}
+.jba-virtual{color:var(--royal)!important}
+.jba-dark .jba-virtual{color:#7d93e8!important}
+.jba-row-actions{display:flex;flex-direction:column;align-items:flex-end;gap:12px;flex-shrink:0}
+.jba-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:20px}
+.jba-card{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:24px;padding:28px;box-shadow:var(--shadow);transition:border-color .3s,box-shadow .3s}
+.jba-card:hover{border-color:rgba(254,95,84,0.4);box-shadow:var(--shadow-lg)}
+.jba-card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:10px}
+.jba-card-title{font-family:var(--font-display);font-size:23px;font-weight:500;letter-spacing:-.01em;margin-bottom:10px}
+.jba-card-desc{font-size:14px;color:var(--ink-soft);line-height:1.6;margin-bottom:20px;flex:1}
+.jba-card-rule{height:1px;background:var(--line);margin-bottom:18px}
+.jba-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 14px;margin-bottom:22px}
+.jba-card-grid>div{display:flex;flex-direction:column;gap:5px}
+.jba-card-fv{font-size:14px;font-weight:600;color:var(--ink)}
+.jba-card-btn{justify-content:center}
+.jba-skel{position:relative;overflow:hidden;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
+.jba-skel-row{height:96px}.jba-skel-card{height:300px}
+.jba-shimmer{position:absolute;inset:0;background:linear-gradient(100deg,transparent 20%,var(--chip) 50%,transparent 80%);background-size:200% 100%;animation:shimmer 1.4s infinite}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.jba-empty{text-align:center;padding:80px 24px;background:var(--surface);border:1px dashed var(--line);border-radius:var(--radius)}
+.jba-empty-mark{width:64px;height:64px;border-radius:20px;background:var(--chip);color:var(--coral);display:grid;place-items:center;margin:0 auto 22px}
+.jba-empty h3{font-family:var(--font-display);font-size:22px;font-weight:500;margin-bottom:10px}
+.jba-empty p{font-size:14.5px;color:var(--ink-soft);max-width:380px;margin:0 auto 24px;line-height:1.6}
+.jba-foot{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:60px;padding-top:26px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-soft);font-weight:500}
+.jba-sticky{position:fixed;left:50%;transform:translateX(-50%);bottom:22px;display:flex;align-items:center;gap:20px;background:var(--navy);color:#fff;padding:13px 14px 13px 24px;border-radius:999px;box-shadow:0 20px 50px -16px rgba(1,21,137,0.6);text-decoration:none;z-index:40;max-width:calc(100vw - 32px)}
+.jba-dark .jba-sticky{background:#1c1c2e;border:1px solid var(--line)}
+.jba-sticky-l{display:flex;flex-direction:column;gap:3px;min-width:0}
+.jba-sticky-k{font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;opacity:.7}
+.jba-sticky-t{font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jba-sticky-btn{padding:11px 20px;font-size:13px}
+.jba-admin-overlay{position:fixed;inset:0;background:rgba(1,21,137,0.34);backdrop-filter:blur(6px);z-index:100;display:flex;justify-content:flex-end}
+.jba-admin{width:min(560px,100vw);height:100%;background:var(--surface);overflow-y:auto;padding:36px 34px;color:var(--ink)}
+.jba-admin-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:28px}
+.jba-admin-kick{font-size:11px;letter-spacing:.2em;font-weight:700;color:#fe5f54;margin-bottom:10px}
+.jba-admin-head h2{font-family:'Fraunces',serif;font-size:28px;font-weight:500;margin-bottom:8px}
+.jba-admin-head p{font-size:14px;color:var(--ink-soft);line-height:1.5}
+.jba-admin-x{width:38px;height:38px;border-radius:12px;border:1px solid var(--line);background:none;font-size:15px;cursor:pointer;color:var(--ink-soft);flex-shrink:0}
+.jba-admin-x:hover{color:#fe5f54;border-color:#fe5f54}
+.jba-admin-actions{display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap}
+.jba-admin-add{flex:1;background:#fe5f54;color:#fff;border:none;border-radius:14px;padding:14px;font-family:'Manrope';font-size:14px;font-weight:700;cursor:pointer;transition:.2s}
+.jba-admin-add:hover{transform:translateY(-1px);box-shadow:0 12px 24px -10px rgba(254,95,84,.55)}
+.jba-admin-reset{background:none;border:1px solid var(--line);border-radius:14px;padding:14px 18px;font-family:'Manrope';font-size:13px;font-weight:600;color:var(--ink-soft);cursor:pointer}
+.jba-admin-reset:hover{color:#fe5f54;border-color:#fe5f54}
+.jba-admin-list{display:flex;flex-direction:column;gap:10px}
+.jba-admin-item{display:flex;justify-content:space-between;align-items:center;gap:14px;border:1px solid var(--line);border-radius:16px;padding:16px 18px}
+.jba-admin-item-main{display:flex;flex-direction:column;gap:6px;min-width:0}
+.jba-admin-item-top{display:flex;gap:8px;align-items:center}
+.jba-admin-tag{font-size:10.5px;font-weight:700;color:#0f2ca0;background:rgba(15,44,160,0.08);padding:3px 9px;border-radius:999px}
+.jba-admin-star{font-size:10.5px;font-weight:700;color:#fe5f54}
+.jba-admin-item-main strong{font-size:15px;font-weight:700}
+.jba-admin-meta{font-size:12.5px;color:var(--ink-soft)}
+.jba-admin-item-btns{display:flex;gap:8px;flex-shrink:0}
+.jba-admin-item-btns button{font-family:'Manrope';font-size:12.5px;font-weight:600;border:1px solid var(--line);background:none;color:var(--ink);border-radius:10px;padding:8px 14px;cursor:pointer;transition:.2s}
+.jba-admin-item-btns button:hover{border-color:#0f2ca0;color:#0f2ca0}
+.jba-del:hover{border-color:#fe5f54!important;color:#fe5f54!important}
+.jba-form{display:flex;flex-direction:column;gap:18px}
+.jba-form label{display:flex;flex-direction:column;gap:8px}
+.jba-form label>span{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft)}
+.jba-form input,.jba-form select,.jba-form textarea{font-family:'Manrope';font-size:14px;padding:13px 15px;border:1px solid var(--line);border-radius:13px;background:var(--bg);color:var(--ink);outline:none;transition:.2s;resize:vertical}
+.jba-form input:focus,.jba-form select:focus,.jba-form textarea:focus{border-color:#fe5f54}
+.jba-form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.jba-form-check{flex-direction:row!important;align-items:center;gap:10px!important;cursor:pointer}
+.jba-form-check input{width:18px;height:18px;accent-color:#fe5f54}
+.jba-form-check span{text-transform:none!important;font-size:14px!important;font-weight:600!important;color:var(--ink)!important;letter-spacing:0!important}
+.jba-form-btns{display:flex;gap:12px;margin-top:8px}
+.jba-form-cancel{flex:1;background:none;border:1px solid var(--line);border-radius:13px;padding:14px;font-family:'Manrope';font-size:14px;font-weight:600;color:var(--ink-soft);cursor:pointer}
+.jba-form-save{flex:2;background:#fe5f54;color:#fff;border:none;border-radius:13px;padding:14px;font-family:'Manrope';font-size:14px;font-weight:700;cursor:pointer;transition:.2s}
+.jba-form-save:hover{transform:translateY(-1px);box-shadow:0 12px 24px -10px rgba(254,95,84,.55)}
+@media(max-width:860px){.jba-wrap{padding:38px 18px 130px}.jba-hero-inner{grid-template-columns:1fr;padding:32px 26px;gap:28px}.jba-hero-right{border-left:none;border-top:1px solid var(--line);padding-left:0;padding-top:26px}.jba-controls{flex-direction:column;align-items:stretch}.jba-control-right{justify-content:space-between}.jba-search input{width:100%}.jba-search{flex:1}}
+@media(max-width:620px){.jba-row{flex-wrap:wrap;gap:16px}.jba-row-spine{display:none}.jba-row-actions{flex-direction:row;width:100%;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:14px}.jba-cd-cell{min-width:42px}.jba-cd-num{font-size:32px}.jba-grid{grid-template-columns:1fr}.jba-foot{flex-direction:column;gap:6px}.jba-sticky{left:16px;right:16px;transform:none;width:auto}.jba-admin{padding:26px 20px}.jba-form-row{grid-template-columns:1fr}}
+</style>
+</body>
+</html>
